@@ -49,10 +49,9 @@
 //    }
     
     server = @"114.114.114.114";
-    NSString *host = @"www.baidu.com";
-    
+    NSString *host = @"en.wikipedia.org";
     QNDnsServer *dnsServer = [QNDnsServer dnsServer:server timeout:30];
-    QNDnsResponse *response = [dnsServer lookupHost:host recordType:QNDnsRecordTypeA error:&error];
+    QNDnsResponse *response = [dnsServer lookupHost:host recordType:QNDnsRecordTypeAAAA error:&error];
     NSLog(@"response:%@ error:%@", response, error);
     
 //    int typeArray[6] = {1, 2, 5, 6, 16, 28};

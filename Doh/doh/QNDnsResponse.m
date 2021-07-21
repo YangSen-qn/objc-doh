@@ -97,7 +97,12 @@
     QNDnsResponse *record = [[QNDnsResponse alloc] init];
     record.request = request;
     record.recordData = recordData;
-    [record prase:error];
+    
+    NSError *err = nil;
+    [record prase:&err];
+    if (error != nil) {
+        *error = err;
+    }
     return record;
 }
 
@@ -110,13 +115,13 @@
     
     // Header
     [self parseHeader:error];
-    if (error != nil) {
+    if (error != nil && *error != nil) {
         return;
     }
     
     // Question
     int index = [self parseQuestion:error];
-    if (error != nil) {
+    if (error != nil && *error != nil) {
         return;
     }
     
@@ -125,7 +130,7 @@
                                                           count:[self.recordData qn_readBigEndianInt16:6]
                                                            from:index];
     [self parseResourceRecord:answer error:error];
-    if (error != nil) {
+    if (error != nil && *error != nil) {
         return;
     }
     index += answer.length;
@@ -136,7 +141,7 @@
                                                              count:[self.recordData qn_readBigEndianInt16:8]
                                                               from:index];
     [self parseResourceRecord:authority error:error];
-    if (error != nil) {
+    if (error != nil && *error != nil) {
         return;
     }
     index += authority.length;
@@ -147,7 +152,7 @@
                                                              count:[self.recordData qn_readBigEndianInt16:10]
                                                               from:index];
     [self parseResourceRecord:additional error:error];
-    if (error != nil) {
+    if (error != nil && *error != nil) {
         return;
     }
     self.additionalArray = [additional.records copy];
@@ -209,24 +214,19 @@
     while (count) {
         QNDnsRecordName *recordName = [self getNameFrom:index];
         if (recordName == nil) {
-            NSString *errorDesc = [NSString stringWithFormat:@"%@ read Answer error", resource.name];
+            NSString *errorDesc = [NSString stringWithFormat:@"read %@ error", resource.name];
             [self copyError:kQNDnsResponseFormatError(errorDesc) toErrorPoint:error];
             return;
         }
 
         index += recordName.skipLength;
         if (self.recordData.length < (index + 2)) {
-            NSString *errorDesc = [NSString stringWithFormat:@"%@ read Answer error: out of range", resource.name];
+            NSString *errorDesc = [NSString stringWithFormat:@"read %@ error: out of range", resource.name];
             [self copyError:kQNDnsResponseFormatError(errorDesc) toErrorPoint:error];
             return;
         }
 
         int type = [self.recordData qn_readBigEndianInt16:index];
-        if (type != QNDnsRecordTypeCNAME && type != self.request.recordType) {
-            NSString *errorDesc = [NSString stringWithFormat:@"%@ except type:%ld but receive:%d", resource.name, (long)self.request.recordType, type];
-            [self copyError:kQNDnsResponseBadTypeError(errorDesc) toErrorPoint:error];
-            return;
-        }
         index += 2;
         
         if (self.recordData.length < (index + 2)) {
@@ -236,11 +236,6 @@
         }
         
         int class = [self.recordData qn_readBigEndianInt16:index];
-        if (class != 0x01) {
-            NSString *errorDesc = [NSString stringWithFormat:@"%@ except class:0x01 but receive:0x%2x", resource.name, class];
-            [self copyError:kQNDnsResponseBadClassError(errorDesc) toErrorPoint:error];
-            return;
-        }
         index += 2;
         
         if (self.recordData.length < (index + 4)) {
@@ -267,8 +262,11 @@
         }
         
         NSString *value = [self readData:type range:NSMakeRange(index, rdLength)];
-        QNDnsRecordSection *detail = [QNDnsRecordSection recordSection:type ttl:ttl name:recordName.name value:[value copy]];
-        [resource.records addObject:detail];
+        
+        if (class == 0x01 && (type == QNDnsRecordTypeCNAME || type == self.request.recordType)) {
+            QNDnsRecordSection *detail = [QNDnsRecordSection recordSection:type ttl:ttl name:recordName.name value:[value copy]];
+            [resource.records addObject:detail];
+        }
         
         index += rdLength;
         count --;
@@ -339,8 +337,12 @@
             }
             break;
         case QNDnsRecordTypeAAAA:
-            if (dataValue.length == 4) {
-                dataString = [NSString stringWithFormat:@"%d.%d.%d.%d", [dataValue qn_readInt8:0], [dataValue qn_readInt8:1], [dataValue qn_readInt8:2], [dataValue qn_readInt8:3]];
+            if (dataValue.length == 16) {
+                NSMutableString *ipv6 = [NSMutableString string];
+                for (int i=0; i<16; i+=2) {
+                    [ipv6 appendFormat:@"%@%02x%02x",(i?@":":@""), [dataValue qn_readInt8:i], [dataValue qn_readInt8:i+1]];
+                }
+                dataString = [ipv6 copy];
             }
             break;
         case QNDnsRecordTypeCNAME: {

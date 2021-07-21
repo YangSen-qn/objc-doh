@@ -12,7 +12,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface QNDnsMessage : NSObject
 
 /**
- * 16位的消息ID标示一次正常的交互，该ID由消息请求者设置，消息响应者回复请求时带上该ID。
+ * 16位的消息ID标示一次正常的交互，该ID由消息请求者设置，消息响应者回复请求时带上该ID。最大：0xFFFF，即：65536
  */
 @property(nonatomic, assign, readonly)int messageId;
 

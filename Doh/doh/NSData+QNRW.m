@@ -11,7 +11,7 @@
 //MARK: 读数据
 - (uint8_t)qn_readInt8:(NSInteger)from {
     uint8_t value = 0;
-    [[self subdataWithRange:NSMakeRange(from, 8)] getBytes:&value length:sizeof(value)];
+    [[self subdataWithRange:NSMakeRange(from, sizeof(value))] getBytes:&value length:sizeof(value)];
     return value;
 }
 

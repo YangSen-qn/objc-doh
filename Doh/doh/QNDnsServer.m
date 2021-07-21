@@ -21,6 +21,7 @@
 
 #define kMinPort 10000
 #define kMaxPort 1000000
+#define kDnsPort 53
 static long portIndex = kMinPort;
 @interface QNDnsServer()<GCDAsyncUdpSocketDelegate>
 
@@ -70,7 +71,7 @@ static long portIndex = kMinPort;
         return;
     }
     
-    int messageId = arc4random()%1000000;
+    int messageId = arc4random()%(0xFFFF);
     QNDnsRequest *dnsRequest = [QNDnsRequest request:messageId recordType:recordType host:host];
     
     NSError *error = nil;
@@ -100,9 +101,26 @@ static long portIndex = kMinPort;
     flow.complete = complete;
     [self setFlow:flow withId:flow.flowId];
     
-    [socket sendData:requestData toHost:self.server port:53 withTimeout:self.timeout tag:flow.flowId];
+    [socket sendData:requestData toHost:self.server port:kDnsPort withTimeout:self.timeout tag:flow.flowId];
 }
 
+- (void)udpSocketComplete:(GCDAsyncUdpSocket *)sock data:(NSData *)data error:(NSError * _Nullable)error {
+    QNDnsFlow *flow = [self getFlowWithId:[sock hash]];
+    if (!flow) {
+        return;
+    }
+    [self removeFlowWithId:flow.flowId];
+    
+    if (error != nil) {
+        flow.complete(nil, error);
+    } else if (data != nil) {
+        NSError *err = nil;
+        QNDnsResponse *response = [QNDnsResponse dnsResponse:flow.dnsRequest dnsRecordData:data error:&err];
+        flow.complete(response, err);
+    } else {
+        flow.complete(nil, nil);
+    }
+}
 
 //MARK: -- GCDAsyncUdpSocketDelegate
 - (void)udpSocket:(GCDAsyncUdpSocket *)sock didConnectToAddress:(NSData *)address {
@@ -110,13 +128,7 @@ static long portIndex = kMinPort;
 }
 
 - (void)udpSocket:(GCDAsyncUdpSocket *)sock didNotConnect:(NSError * _Nullable)error {
-    QNDnsFlow *flow = [self getFlowWithId:[sock hash]];
-    if (!flow) {
-        return;
-    }
-    
-    flow.complete(nil, error);
-    [self removeFlowWithId:flow.flowId];
+    [self udpSocketComplete:sock data:nil error:error];
 }
 
 - (void)udpSocket:(GCDAsyncUdpSocket *)sock didSendDataWithTag:(long)tag {
@@ -124,39 +136,20 @@ static long portIndex = kMinPort;
 }
 
 - (void)udpSocket:(GCDAsyncUdpSocket *)sock didNotSendDataWithTag:(long)tag dueToError:(NSError * _Nullable)error {
-    QNDnsFlow *flow = [self getFlowWithId:[sock hash]];
-    if (!flow) {
-        return;
-    }
-    
-    flow.complete(nil, error);
-    [self removeFlowWithId:flow.flowId];
+    [self udpSocketComplete:sock data:nil error:error];
 }
 
 - (void)udpSocket:(GCDAsyncUdpSocket *)sock
    didReceiveData:(NSData *)data
       fromAddress:(NSData *)address
 withFilterContext:(nullable id)filterContext {
-    QNDnsFlow *flow = [self getFlowWithId:[sock hash]];
-    if (!flow) {
-        return;
-    }
-    
-    NSError *error = nil;
-    QNDnsResponse *response = [QNDnsResponse dnsResponse:flow.dnsRequest dnsRecordData:data error:&error];
-    flow.complete(response, error);
-    [self removeFlowWithId:flow.flowId];
+    [self udpSocketComplete:sock data:data error:nil];
 }
 
 - (void)udpSocketDidClose:(GCDAsyncUdpSocket *)sock withError:(NSError  * _Nullable)error {
-    QNDnsFlow *flow = [self getFlowWithId:[sock hash]];
-    if (!flow) {
-        return;
-    }
-    
-    flow.complete(nil, error);
-    [self removeFlowWithId:flow.flowId];
+    [self udpSocketComplete:sock data:nil error:error];
 }
+
 
 //MARK: flows
 - (QNDnsFlow *)getFlowWithId:(long)flowId {
