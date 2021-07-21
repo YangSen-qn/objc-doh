@@ -20,9 +20,9 @@
 @end
 
 #define kMinPort 10000
-#define kMaxPort 1000000
+#define kMaxPort (0xFFFF)
 #define kDnsPort 53
-static long portIndex = kMinPort;
+#define kGetPortMaxTime 10
 @interface QNDnsServer()<GCDAsyncUdpSocketDelegate>
 
 @property(nonatomic, strong)dispatch_queue_t queue;
@@ -82,7 +82,15 @@ static long portIndex = kMinPort;
     }
     
     GCDAsyncUdpSocket *socket = [[GCDAsyncUdpSocket alloc] initWithDelegate:self delegateQueue:self.queue];
-    [socket bindToPort:[self refreshPort] error: &error];
+    int time = 0;
+    while (time < kGetPortMaxTime) {
+        [socket bindToPort:[self refreshPort] error: &error];
+        if (!error) {
+            break;
+        }
+        error = nil;
+        time++;
+    }
     if (error) {
         complete(nil, error);
         return;
@@ -105,6 +113,8 @@ static long portIndex = kMinPort;
 }
 
 - (void)udpSocketComplete:(GCDAsyncUdpSocket *)sock data:(NSData *)data error:(NSError * _Nullable)error {
+    [sock close];
+    
     QNDnsFlow *flow = [self getFlowWithId:[sock hash]];
     if (!flow) {
         return;
@@ -181,12 +191,7 @@ withFilterContext:(nullable id)filterContext {
 }
 
 - (long)refreshPort {
-    if (portIndex > kMaxPort || portIndex < kMinPort) {
-        portIndex = kMinPort;
-    } else {
-        portIndex ++;
-    }
-    return portIndex;
+    return arc4random()%(kMaxPort + kMinPort) - kMinPort;
 }
 
 @end
